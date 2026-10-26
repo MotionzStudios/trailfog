@@ -19,7 +19,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - uses: actions/setup-java@v4
         with:
@@ -32,7 +32,7 @@ jobs:
       # Start from the official Expo template so every package version matches,
       # then drop TrailFog's code into it.
       - name: Create a clean Expo project
-        run: npx --yes create-expo-app@latest app --template blank@sdk-54 --no-install
+        run: npx --yes create-expo-app@latest app --template blank --no-install
 
       - name: Copy TrailFog code in
         run: |
@@ -52,6 +52,14 @@ jobs:
         run: |
           npm install
           npx expo install expo-location expo-task-manager expo-sqlite expo-status-bar react-native-maps react-native-svg react-native-safe-area-context @expo/vector-icons
+
+      - name: Check native modules
+        working-directory: app
+        run: |
+          node -e "const p=require('./package.json');console.log(JSON.stringify(p.dependencies,null,2))"
+          npm ls expo-modules-autolinking expo-modules-core || true
+          npx expo-modules-autolinking resolve --platform android --json > autolink.json || true
+          node -e "const j=require('./autolink.json');(j.modules||[]).forEach((m,i)=>console.log(i,m.packageName,m.packageVersion,JSON.stringify((m.projects||[]).map(p=>p.publication||null))))" || true
 
       - name: Generate Android project
         working-directory: app
