@@ -1,0 +1,54 @@
+name: Build TrailFog APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Unpack the app
+        run: unzip -o trailfog.zip
+
+      - name: Add Google Maps key
+        working-directory: trailfog
+        env:
+          MAPS_KEY: ${{ secrets.GOOGLE_MAPS_KEY }}
+        run: sed -i "s/PASTE_YOUR_GOOGLE_MAPS_ANDROID_API_KEY_HERE/${MAPS_KEY}/" app.json
+
+      - name: Install packages
+        working-directory: trailfog
+        run: |
+          npm install
+          npx expo install --fix
+
+      - name: Generate Android project
+        working-directory: trailfog
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build APK
+        working-directory: trailfog/android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Publish APK for download
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: TrailFog build ${{ github.run_number }}
+          files: trailfog/android/app/build/outputs/apk/release/*.apk
