@@ -67,9 +67,26 @@ jobs:
         working-directory: app
         run: npx expo prebuild --platform android --no-install
 
+      # Make sure the Google Maps key is in the Android manifest (a missing key crashes the map on open).
+      - name: Make sure the Maps key is in the app
+        working-directory: app
+        env:
+          MAPS_KEY: ${{ secrets.GOOGLE_MAPS_KEY }}
+        run: |
+          M=android/app/src/main/AndroidManifest.xml
+          if grep -q "com.google.android.geo.API_KEY" "$M"; then
+            echo "Maps key entry already present"
+            sed -i "s#android:name=\"com.google.android.geo.API_KEY\" android:value=\"[^\"]*\"#android:name=\"com.google.android.geo.API_KEY\" android:value=\"${MAPS_KEY}\"#" "$M"
+          else
+            echo "Maps key entry was MISSING - adding it"
+            sed -i "s#<application\([^>]*\)>#<application\1><meta-data android:name=\"com.google.android.geo.API_KEY\" android:value=\"${MAPS_KEY}\"/>#" "$M"
+          fi
+          grep -c "com.google.android.geo.API_KEY" "$M"
+
       - name: Build APK
         working-directory: app/android
-        run: ./gradlew assembleRelease --no-daemon
+        # Only build for real phones (arm64) and the test phone (x86_64): about twice as fast.
+        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,x86_64
 
       - name: Publish APK for download
         uses: softprops/action-gh-release@v2
@@ -106,10 +123,12 @@ jobs:
         continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: 31
           arch: x86_64
           target: google_apis
           disable-animations: true
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           script: bash launch-test.sh
 
       - name: Save full launch log
