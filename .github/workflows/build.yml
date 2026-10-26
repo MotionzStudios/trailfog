@@ -45,7 +45,9 @@ jobs:
         working-directory: app
         env:
           MAPS_KEY: ${{ secrets.GOOGLE_MAPS_KEY }}
-        run: sed -i "s/PASTE_YOUR_GOOGLE_MAPS_ANDROID_API_KEY_HERE/${MAPS_KEY}/" app.json
+        run: |
+          sed -i "s/PASTE_YOUR_GOOGLE_MAPS_ANDROID_API_KEY_HERE/${MAPS_KEY}/" app.json
+          if [ -n "$MAPS_KEY" ]; then echo "Maps key added (${#MAPS_KEY} characters)"; else echo "WARNING: GOOGLE_MAPS_KEY secret is empty"; fi
 
       - name: Install packages
         working-directory: app
@@ -75,3 +77,45 @@ jobs:
           tag_name: build-${{ github.run_number }}
           name: TrailFog build ${{ github.run_number }}
           files: app/android/app/build/outputs/apk/release/*.apk
+
+      # Start the app on a virtual phone and print why it crashes, if it does.
+      - name: Write launch test
+        run: |
+          cat > launch-test.sh <<'EOF'
+          set +e
+          APK=$(ls app/android/app/build/outputs/apk/release/*.apk | head -1)
+          adb install -r "$APK"
+          adb logcat -c
+          adb shell monkey -p com.trailfog.app -c android.intent.category.LAUNCHER 1
+          sleep 30
+          adb logcat -d > launch-log.txt
+          echo "=================== CRASH REPORT ==================="
+          grep -E " E AndroidRuntime| E ReactNativeJS| F libc| E unknown:ReactNative" launch-log.txt | head -70
+          echo "=================== IS THE APP RUNNING? ==================="
+          if adb shell pidof com.trailfog.app; then echo "YES - TrailFog is running"; else echo "NO - TrailFog crashed"; fi
+          exit 0
+          EOF
+
+      - name: Enable virtual phone support
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Test launch on virtual phone
+        continue-on-error: true
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: bash launch-test.sh
+
+      - name: Save full launch log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: launch-log
+          path: launch-log.txt
+          if-no-files-found: ignore
