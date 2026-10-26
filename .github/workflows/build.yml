@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write
 
+env:
+  CI: 1
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -26,24 +29,36 @@ jobs:
       - name: Unpack the app
         run: unzip -o trailfog.zip
 
+      # Start from the official Expo template so every package version matches,
+      # then drop TrailFog's code into it.
+      - name: Create a clean Expo project
+        run: npx --yes create-expo-app@latest app --template blank@sdk-54 --no-install
+
+      - name: Copy TrailFog code in
+        run: |
+          cp -r trailfog/src app/
+          cp trailfog/App.js trailfog/index.js trailfog/app.json trailfog/eas.json app/
+          cd app
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json'));p.name='trailfog';p.main='index.js';fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
+
       - name: Add Google Maps key
-        working-directory: trailfog
+        working-directory: app
         env:
           MAPS_KEY: ${{ secrets.GOOGLE_MAPS_KEY }}
         run: sed -i "s/PASTE_YOUR_GOOGLE_MAPS_ANDROID_API_KEY_HERE/${MAPS_KEY}/" app.json
 
       - name: Install packages
-        working-directory: trailfog
+        working-directory: app
         run: |
           npm install
-          npx expo install --fix
+          npx expo install expo-location expo-task-manager expo-sqlite expo-status-bar react-native-maps react-native-svg react-native-safe-area-context @expo/vector-icons
 
       - name: Generate Android project
-        working-directory: trailfog
+        working-directory: app
         run: npx expo prebuild --platform android --no-install
 
       - name: Build APK
-        working-directory: trailfog/android
+        working-directory: app/android
         run: ./gradlew assembleRelease --no-daemon
 
       - name: Publish APK for download
@@ -51,4 +66,4 @@ jobs:
         with:
           tag_name: build-${{ github.run_number }}
           name: TrailFog build ${{ github.run_number }}
-          files: trailfog/android/app/build/outputs/apk/release/*.apk
+          files: app/android/app/build/outputs/apk/release/*.apk
