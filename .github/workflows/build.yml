@@ -37,6 +37,7 @@ jobs:
       - name: Copy TrailFog code in
         run: |
           cp -r trailfog/src trailfog/web trailfog/scripts app/
+          mkdir -p app/assets && cp -r trailfog/assets/. app/assets/
           cp trailfog/App.js trailfog/index.js trailfog/app.json app/
           cd app
           node scripts/build-map.js
@@ -66,7 +67,7 @@ jobs:
         working-directory: app
         run: |
           npm install
-          npx expo install expo-location expo-task-manager expo-sqlite react-native-webview expo-image-picker expo-file-system expo-image-manipulator expo-document-picker
+          npx expo install expo-location expo-task-manager expo-sqlite react-native-webview expo-image-picker expo-file-system expo-image-manipulator expo-document-picker expo-splash-screen
 
       - name: Generate Android project
         working-directory: app
