@@ -1,4 +1,4 @@
-name: Build TrailFog test apps
+name: Build TrailFog APK
 
 on:
   workflow_dispatch:
@@ -14,10 +14,6 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        test: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
 
@@ -33,72 +29,24 @@ jobs:
       - name: Unpack the app
         run: unzip -o trailfog.zip
 
+      # Start from the official Expo template (same as TF Test 1 and 2, which work),
+      # then drop TrailFog's code into it.
       - name: Create a clean Expo project
         run: npx --yes create-expo-app@latest app --template blank --no-install
 
-      # Test 1: the blank template, untouched (just renamed).
-      # Test 2: template + TrailFog's settings + GPS, background and storage modules, tiny screen.
-      # Test 3: the full TrailFog app.
-      - name: Set up test ${{ matrix.test }}
+      - name: Copy TrailFog code in
         run: |
-          T=${{ matrix.test }}
-          if [ "$T" = "2" ] || [ "$T" = "3" ]; then
-            cp trailfog/app.json app/app.json
-          fi
-          if [ "$T" = "2" ]; then
-            cat > app/App.js <<'EOF'
-          import React from 'react';
-          import { Text, View } from 'react-native';
-          import * as Location from 'expo-location';
-          import * as TaskManager from 'expo-task-manager';
-          import * as SQLite from 'expo-sqlite';
-          const loaded = [typeof Location.requestForegroundPermissionsAsync, typeof TaskManager.defineTask, typeof SQLite.openDatabaseAsync].join(', ');
-          export default function App() {
-            return (
-              <View style={{ flex: 1, backgroundColor: '#1A1F27', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-                <Text style={{ color: '#F2A93B', fontSize: 26, fontWeight: '800' }}>TEST 2 WORKS</Text>
-                <Text style={{ color: '#ccc', marginTop: 12, textAlign: 'center' }}>GPS, background and storage parts loaded ({loaded})</Text>
-              </View>
-            );
-          }
-          EOF
-          fi
-          if [ "$T" = "3" ]; then
-            cp -r trailfog/src app/
-            cp trailfog/App.js trailfog/index.js app/
-          fi
+          cp -r trailfog/src trailfog/web trailfog/scripts app/
+          cp trailfog/App.js trailfog/index.js trailfog/app.json app/
           cd app
-          node -e "
-            const fs=require('fs');
-            const a=JSON.parse(fs.readFileSync('app.json'));
-            a.expo.name='TF Test $T';
-            a.expo.slug='tftest$T';
-            a.expo.android=a.expo.android||{};
-            a.expo.android.package='com.trailfog.test$T';
-            fs.writeFileSync('app.json',JSON.stringify(a,null,2));
-            const p=JSON.parse(fs.readFileSync('package.json'));
-            if('$T'==='3'){p.main='index.js';}
-            fs.writeFileSync('package.json',JSON.stringify(p,null,2));
-          "
-          cat app.json
-
-      - name: Add Google Maps key
-        if: matrix.test == 3
-        working-directory: app
-        env:
-          MAPS_KEY: ${{ secrets.GOOGLE_MAPS_KEY }}
-        run: sed -i "s/PASTE_YOUR_GOOGLE_MAPS_ANDROID_API_KEY_HERE/${MAPS_KEY}/" app.json
+          node scripts/build-map.js
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json'));p.name='trailfog';p.main='index.js';fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
 
       - name: Install packages
         working-directory: app
         run: |
           npm install
-          if [ "${{ matrix.test }}" = "2" ]; then
-            npx expo install expo-location expo-task-manager expo-sqlite
-          fi
-          if [ "${{ matrix.test }}" = "3" ]; then
-            npx expo install expo-location expo-task-manager expo-sqlite expo-status-bar react-native-maps react-native-svg react-native-safe-area-context @expo/vector-icons
-          fi
+          npx expo install expo-location expo-task-manager expo-sqlite react-native-webview
 
       - name: Generate Android project
         working-directory: app
@@ -109,11 +57,11 @@ jobs:
         run: ./gradlew assembleRelease --no-daemon
 
       - name: Rename APK
-        run: cp app/android/app/build/outputs/apk/release/app-release.apk TF-Test-${{ matrix.test }}.apk
+        run: cp app/android/app/build/outputs/apk/release/app-release.apk TrailFog.apk
 
       - name: Publish APK for download
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: test-${{ github.run_number }}-${{ matrix.test }}
-          name: TF Test ${{ matrix.test }} (run ${{ github.run_number }})
-          files: TF-Test-${{ matrix.test }}.apk
+          tag_name: build-${{ github.run_number }}
+          name: TrailFog build ${{ github.run_number }}
+          files: TrailFog.apk
