@@ -42,11 +42,31 @@ jobs:
           node scripts/build-map.js
           node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json'));p.name='trailfog';p.main='index.js';fs.writeFileSync('package.json',JSON.stringify(p,null,2))"
 
+      - name: Add group server details
+        working-directory: app
+        env:
+          SB_URL: ${{ secrets.SUPABASE_URL }}
+          SB_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          node -e "
+            const fs = require('fs');
+            const url = (process.env.SB_URL || '').trim().replace(/\/+$/, '');
+            const key = (process.env.SB_KEY || '').trim();
+            let s = fs.readFileSync('src/config.js', 'utf8');
+            if (url && key) {
+              s = s.replace('PASTE_SUPABASE_URL', url).replace('PASTE_SUPABASE_KEY', key);
+              console.log('Group server added: ' + url);
+            } else {
+              console.log('WARNING: SUPABASE_URL / SUPABASE_KEY secrets not set - groups will be switched off in this build');
+            }
+            fs.writeFileSync('src/config.js', s);
+          "
+
       - name: Install packages
         working-directory: app
         run: |
           npm install
-          npx expo install expo-location expo-task-manager expo-sqlite react-native-webview
+          npx expo install expo-location expo-task-manager expo-sqlite react-native-webview expo-image-picker expo-file-system expo-image-manipulator expo-document-picker
 
       - name: Generate Android project
         working-directory: app
