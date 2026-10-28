@@ -67,7 +67,7 @@ jobs:
         working-directory: app
         run: |
           npm install
-          npx expo install expo-location expo-task-manager expo-sqlite react-native-webview expo-image-picker expo-file-system expo-image-manipulator expo-document-picker expo-splash-screen
+          bash scripts/deps.sh
 
       - name: Generate Android project
         working-directory: app
