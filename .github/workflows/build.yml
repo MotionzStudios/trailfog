@@ -48,6 +48,7 @@ jobs:
         env:
           SB_URL: ${{ secrets.SUPABASE_URL }}
           SB_KEY: ${{ secrets.SUPABASE_KEY }}
+          MT_KEY: ${{ secrets.MAPTILER_KEY }}
         run: |
           node -e "
             const fs = require('fs');
@@ -60,6 +61,9 @@ jobs:
             } else {
               console.log('WARNING: SUPABASE_URL / SUPABASE_KEY secrets not set - groups will be switched off in this build');
             }
+            const mt = (process.env.MT_KEY || '').trim();
+            if (mt) { s = s.replace('PASTE_MAPTILER_KEY', mt); console.log('MapTiler maps added'); }
+            else console.log('WARNING: MAPTILER_KEY secret not set - using the old free maps');
             fs.writeFileSync('src/config.js', s);
           "
 
