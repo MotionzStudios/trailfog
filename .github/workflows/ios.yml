@@ -1,0 +1,80 @@
+name: Build TrailFog iPhone (TestFlight + App Store)
+
+# Runs only when started by hand: Actions -> this workflow -> Run workflow.
+# Builds on Expo's Macs with the certificates Expo already keeps for TrailFog,
+# then sends the build to App Store Connect (TestFlight). No Apple login needed here.
+on:
+  workflow_dispatch:
+
+env:
+  CI: 1
+  EAS_NO_VCS: 1
+  EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+jobs:
+  ios:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Unpack the app
+        run: unzip -o trailfog.zip
+
+      - name: Create a clean Expo project
+        run: npx --yes create-expo-app@latest app --template blank --no-install
+
+      - name: Copy TrailFog code in
+        run: |
+          cp -r trailfog/src trailfog/web trailfog/scripts app/
+          mkdir -p app/assets && cp -r trailfog/assets/. app/assets/
+          cp trailfog/App.js trailfog/index.js trailfog/app.json app/
+          cd app
+          node scripts/build-map.js
+          node -e "
+            const fs = require('fs');
+            const p = JSON.parse(fs.readFileSync('package.json')); p.name = 'trailfog'; p.main = 'index.js';
+            fs.writeFileSync('package.json', JSON.stringify(p, null, 2));
+            const a = JSON.parse(fs.readFileSync('app.json'));
+            a.expo.owner = 'motionzstudios';
+            a.expo.extra = { ...(a.expo.extra || {}), eas: { projectId: 'f2633936-e18e-4418-b093-eadca7a3bc09' } };
+            fs.writeFileSync('app.json', JSON.stringify(a, null, 2));
+            fs.writeFileSync('eas.json', JSON.stringify({
+              cli: { version: '>= 16.0.0', appVersionSource: 'remote' },
+              build: { production: { autoIncrement: true, ios: { resourceClass: 'default' } } },
+              submit: { production: { ios: { ascAppId: '6827783039' } } }
+            }, null, 2));
+          "
+
+      - name: Add group server and map keys
+        working-directory: app
+        env:
+          SB_URL: ${{ secrets.SUPABASE_URL }}
+          SB_KEY: ${{ secrets.SUPABASE_KEY }}
+          MT_KEY: ${{ secrets.MAPTILER_KEY }}
+        run: |
+          node -e "
+            const fs = require('fs');
+            const url = (process.env.SB_URL || '').trim().replace(/\/+$/, '');
+            const key = (process.env.SB_KEY || '').trim();
+            const mt = (process.env.MT_KEY || '').trim();
+            if (!url || !key || !mt) { console.error('Missing SUPABASE_URL, SUPABASE_KEY or MAPTILER_KEY secret'); process.exit(1); }
+            if (key.startsWith('sb_secret')) { console.error('SUPABASE_KEY is the secret key - use the publishable one'); process.exit(1); }
+            let s = fs.readFileSync('src/config.js', 'utf8');
+            s = s.replace('PASTE_SUPABASE_URL', url).replace('PASTE_SUPABASE_KEY', key).replace('PASTE_MAPTILER_KEY', mt);
+            fs.writeFileSync('src/config.js', s);
+            console.log('Keys added');
+          "
+
+      - name: Install packages
+        working-directory: app
+        run: |
+          npm install
+          bash scripts/deps.sh
+
+      - name: Build on Expo and send to App Store Connect
+        working-directory: app
+        run: npx --yes eas-cli@latest build --platform ios --profile production --non-interactive --auto-submit --no-wait
